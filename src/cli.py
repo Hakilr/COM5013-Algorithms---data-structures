@@ -1,5 +1,9 @@
+from pathlib import Path
+
 from src.card import Card
-from src.deck import Deck
+from src.storage import StorageError, load_deck, save_deck
+
+SAVE_FILE = Path(__file__).resolve().parent.parent / "deck.json"
 
 
 def next_card_id(deck):
@@ -9,7 +13,7 @@ def next_card_id(deck):
 
 
 def add_card_prompt(deck):
-    """Ask the user for card details, then add the card to the deck."""
+    """Ask the user for card details, add the card, then save the deck."""
     print("\n--- Add a new card ---")
     topic = input("Topic (e.g. Cells and control): ")
     subtopic = input("Subtopic (optional, press Enter to skip): ")
@@ -28,9 +32,15 @@ def add_card_prompt(deck):
             difficulty=difficulty,
         )
         deck.add_card(card)
-        print(f"Card {card.card_id} added.")
     except ValueError as error:
         print(f"Could not add card: {error}")
+        return
+
+    try:
+        save_deck(deck, SAVE_FILE)
+        print(f"Card {card.card_id} added and saved.")
+    except StorageError as error:
+        print(f"Card added, but it could not be saved: {error}")
 
 
 def list_cards(deck):
@@ -45,7 +55,15 @@ def list_cards(deck):
 
 
 def main():
-    deck = Deck()
+    try:
+        deck = load_deck(SAVE_FILE)
+    except StorageError as error:
+        print(f"Could not load your saved cards: {error}")
+        print("The app has stopped so your save file is not overwritten.")
+        return
+
+    print(f"Loaded {len(deck)} card(s).")
+
     while True:
         print("\n=== Biology Revision ===")
         print("1. Add a card")
