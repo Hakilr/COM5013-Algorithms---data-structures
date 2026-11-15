@@ -53,6 +53,35 @@ def list_cards(deck):
     for card in cards:
         print(f"[{card.card_id}] {card.topic} | Q: {card.question} | A: {card.answer}")
 
+def delete_card_prompt(deck):
+    """Ask for a card ID, confirm, delete the card, then save the deck."""
+    print("\n--- Delete a card ---")
+    id_text = input("Enter the ID of the card to delete: ").strip()
+
+    try:
+        card_id = int(id_text)
+    except ValueError:
+        print("Please enter a whole number for the ID.")
+        return
+
+    card = deck.get_card(card_id)
+    if card is None:
+        print(f"No card with ID {card_id}.")
+        return
+
+    print(f"[{card.card_id}] {card.topic} | Q: {card.question} | A: {card.answer}")
+    confirm = input("Delete this card? (y/n): ").strip().lower()
+    if confirm != "y":
+        print("Cancelled. The card was not deleted.")
+        return
+
+    deck.delete_card(card_id)
+
+    try:
+        save_deck(deck, SAVE_FILE)
+        print(f"Card {card_id} deleted and saved.")
+    except StorageError as error:
+        print(f"Card deleted, but the change could not be saved: {error}")
 
 def main():
     try:
@@ -68,7 +97,8 @@ def main():
         print("\n=== Biology Revision ===")
         print("1. Add a card")
         print("2. List cards")
-        print("3. Quit")
+        print("3. Delete a card")
+        print("4. Quit")
         choice = input("Choose an option: ").strip()
 
         if choice == "1":
@@ -76,11 +106,12 @@ def main():
         elif choice == "2":
             list_cards(deck)
         elif choice == "3":
+            delete_card_prompt(deck)
+        elif choice == "4":
             print("Goodbye!")
             break
         else:
-            print("Please enter 1, 2 or 3.")
-
+            print("Please enter 1, 2, 3 or 4.")
 
 if __name__ == "__main__":
     main()
