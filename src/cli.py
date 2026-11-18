@@ -3,6 +3,7 @@ from pathlib import Path
 from src.card import Card, parse_difficulty
 from src.importer import ImportFileError, import_cards_from_csv
 from src.storage import StorageError, load_deck, save_deck
+from src.trie_index import TrieIndex
 
 SAVE_FILE = Path(__file__).resolve().parent.parent / "deck.json"
 
@@ -13,8 +14,16 @@ def next_card_id(deck):
     return max(ids, default=0) + 1
 
 
-def add_card_prompt(deck):
-    """Ask the user for card details, add the card, then save the deck."""
+def format_card(card):
+    """Return a one-line description of a card."""
+    return (
+        f"[{card.card_id}] {card.topic} > {card.subtopic} "
+        f"(difficulty {card.difficulty}) | Q: {card.question} | A: {card.answer}"
+    )
+
+
+def add_card_prompt(deck, index):
+    """Ask the user for card details, add the card, index it, then save the deck."""
     print("\n--- Add a new card ---")
     topic = input("Topic (e.g. Cells and control): ")
     subtopic = input("Subtopic (e.g. Mitosis): ")
@@ -36,6 +45,8 @@ def add_card_prompt(deck):
         print(f"Could not add card: {error}")
         return
 
+    index.add_card(card)
+
     try:
         save_deck(deck, SAVE_FILE)
         print(f"Card {card.card_id} added and saved.")
@@ -51,13 +62,28 @@ def list_cards(deck):
         return
     print()
     for card in cards:
-        print(
-            f"[{card.card_id}] {card.topic} > {card.subtopic} "
-            f"(difficulty {card.difficulty}) | Q: {card.question} | A: {card.answer}"
-        )
+        print(format_card(card))
 
 
-def delete_card_prompt(deck):
+def search_cards_prompt(deck, index):
+    """Ask for a search term and show the matching cards."""
+    print("\n--- Search cards ---")
+    query = input("Search for a word, or the start of one (e.g. mito): ").strip()
+    if not query:
+        print("Please type something to search for.")
+        return
+
+    ids = index.search(query)
+    if not ids:
+        print("No cards found.")
+        return
+
+    print(f"\n{len(ids)} card(s) found:")
+    for card_id in ids:
+        print(format_card(deck.get_card(card_id)))
+
+
+def delete_card_prompt(deck, index):
     """Ask for a card ID, confirm, delete the card, then save the deck."""
     print("\n--- Delete a card ---")
     id_text = input("Enter the ID of the card to delete: ").strip()
@@ -73,16 +99,14 @@ def delete_card_prompt(deck):
         print(f"No card with ID {card_id}.")
         return
 
-    print(
-        f"[{card.card_id}] {card.topic} > {card.subtopic} "
-        f"(difficulty {card.difficulty}) | Q: {card.question} | A: {card.answer}"
-    )
+    print(format_card(card))
     confirm = input("Delete this card? (y/n): ").strip().lower()
     if confirm != "y":
         print("Cancelled. The card was not deleted.")
         return
 
     deck.delete_card(card_id)
+    index.remove_card(card_id)
 
     try:
         save_deck(deck, SAVE_FILE)
@@ -92,19 +116,23 @@ def delete_card_prompt(deck):
 
 
 def import_cards_prompt(deck):
-    """Ask for a CSV file, import its cards, report the result, then save."""
+    """Ask for a CSV file, import its cards, report the result, then save.
+
+    Returns the number of cards added, so the caller knows whether to rebuild
+    the search index.
+    """
     print("\n--- Import cards from CSV ---")
     print("Columns (all required): topic, subtopic, question, answer, difficulty")
     path = input("Path to CSV file: ").strip().strip('"')
     if not path:
         print("No file given.")
-        return
+        return 0
 
     try:
         result = import_cards_from_csv(deck, path)
     except ImportFileError as error:
         print(f"Import failed: {error}")
-        return
+        return 0
 
     print(
         f"Imported {result.added} card(s). "
@@ -123,6 +151,8 @@ def import_cards_prompt(deck):
         except StorageError as error:
             print(f"Cards were imported, but could not be saved: {error}")
 
+    return result.added
+
 
 def main():
     try:
@@ -132,30 +162,35 @@ def main():
         print("The app has stopped so your save file is not overwritten.")
         return
 
+    index = TrieIndex.from_deck(deck)
     print(f"Loaded {len(deck)} card(s).")
 
     while True:
         print("\n=== Biology Revision ===")
         print("1. Add a card")
         print("2. List cards")
-        print("3. Delete a card")
-        print("4. Import cards from CSV")
-        print("5. Quit")
+        print("3. Search cards")
+        print("4. Delete a card")
+        print("5. Import cards from CSV")
+        print("6. Quit")
         choice = input("Choose an option: ").strip()
 
         if choice == "1":
-            add_card_prompt(deck)
+            add_card_prompt(deck, index)
         elif choice == "2":
             list_cards(deck)
         elif choice == "3":
-            delete_card_prompt(deck)
+            search_cards_prompt(deck, index)
         elif choice == "4":
-            import_cards_prompt(deck)
+            delete_card_prompt(deck, index)
         elif choice == "5":
+            if import_cards_prompt(deck):
+                index = TrieIndex.from_deck(deck)   # rebuild so imported cards are searchable
+        elif choice == "6":
             print("Goodbye!")
             break
         else:
-            print("Please enter 1, 2, 3, 4 or 5.")
+            print("Please enter 1, 2, 3, 4, 5 or 6.")
 
 
 if __name__ == "__main__":
