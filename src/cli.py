@@ -2,6 +2,7 @@ from pathlib import Path
 
 from src.card import Card, parse_difficulty
 from src.importer import ImportFileError, import_cards_from_csv
+from src.sorter import merge_sort
 from src.storage import StorageError, load_deck, save_deck
 from src.trie_index import TrieIndex
 
@@ -21,6 +22,43 @@ def format_card(card):
         f"(difficulty {card.difficulty}) | Q: {card.question} | A: {card.answer}"
     )
 
+
+# --- Sort orders ---------------------------------------------------------
+# merge_sort is stable, so sorting by a secondary key first and the primary
+# key second gives "primary key, then secondary key" without extra code.
+
+def sort_by_id(cards):
+    return merge_sort(cards, key=lambda card: card.card_id)
+
+
+def sort_by_difficulty_easiest_first(cards):
+    return merge_sort(cards, key=lambda card: card.difficulty)
+
+
+def sort_by_difficulty_hardest_first(cards):
+    return merge_sort(cards, key=lambda card: -card.difficulty)
+
+
+def sort_by_topic_then_subtopic(cards):
+    by_subtopic = merge_sort(cards, key=lambda card: card.subtopic.lower())
+    return merge_sort(by_subtopic, key=lambda card: card.topic.lower())
+
+
+def sort_by_topic_then_difficulty(cards):
+    by_difficulty = merge_sort(cards, key=lambda card: card.difficulty)
+    return merge_sort(by_difficulty, key=lambda card: card.topic.lower())
+
+
+SORT_OPTIONS = {
+    "1": ("ID (order added)", sort_by_id),
+    "2": ("difficulty, easiest first", sort_by_difficulty_easiest_first),
+    "3": ("difficulty, hardest first", sort_by_difficulty_hardest_first),
+    "4": ("topic, then subtopic", sort_by_topic_then_subtopic),
+    "5": ("topic, then difficulty", sort_by_topic_then_difficulty),
+}
+
+
+# --- Menu actions --------------------------------------------------------
 
 def add_card_prompt(deck, index):
     """Ask the user for card details, add the card, index it, then save the deck."""
@@ -55,13 +93,24 @@ def add_card_prompt(deck, index):
 
 
 def list_cards(deck):
-    """Print every card in the deck."""
+    """Ask how to order the cards, then print them."""
     cards = deck.all_cards()
     if not cards:
         print("\nThe deck is empty.")
         return
-    print()
-    for card in cards:
+
+    print("\n--- List cards ---")
+    for key, (label, _) in SORT_OPTIONS.items():
+        print(f"{key}. {label}")
+    choice = input("Sort by [1]: ").strip() or "1"
+
+    if choice not in SORT_OPTIONS:
+        print("Please choose one of the numbers shown.")
+        return
+
+    label, sorter = SORT_OPTIONS[choice]
+    print(f"\n{len(cards)} card(s), sorted by {label}:")
+    for card in sorter(cards):
         print(format_card(card))
 
 
