@@ -1,7 +1,9 @@
+import time
 from pathlib import Path
 
 from src.card import Card, parse_difficulty
 from src.importer import ImportFileError, import_cards_from_csv
+from src.scheduler import Scheduler
 from src.sorter import merge_sort
 from src.storage import StorageError, load_deck, save_deck
 from src.trie_index import TrieIndex
@@ -21,6 +23,20 @@ def format_card(card):
         f"[{card.card_id}] {card.topic} > {card.subtopic} "
         f"(difficulty {card.difficulty}) | Q: {card.question} | A: {card.answer}"
     )
+
+
+def format_wait(seconds):
+    """Turn a number of seconds into a short phrase such as '5 minute(s)'."""
+    seconds = max(0, int(seconds))
+    if seconds < 60:
+        return f"{seconds} second(s)"
+    minutes = seconds // 60
+    if minutes < 60:
+        return f"{minutes} minute(s)"
+    hours = minutes // 60
+    if hours < 48:
+        return f"{hours} hour(s)"
+    return f"{hours // 24} day(s)"
 
 
 # --- Sort orders ---------------------------------------------------------
@@ -60,8 +76,8 @@ SORT_OPTIONS = {
 
 # --- Menu actions --------------------------------------------------------
 
-def add_card_prompt(deck, index):
-    """Ask the user for card details, add the card, index it, then save the deck."""
+def add_card_prompt(deck, index, scheduler):
+    """Ask for card details, add the card, index and schedule it, then save."""
     print("\n--- Add a new card ---")
     topic = input("Topic (e.g. Cells and control): ")
     subtopic = input("Subtopic (e.g. Mitosis): ")
@@ -84,6 +100,7 @@ def add_card_prompt(deck, index):
         return
 
     index.add_card(card)
+    scheduler.add_card(card)
 
     try:
         save_deck(deck, SAVE_FILE)
@@ -132,8 +149,8 @@ def search_cards_prompt(deck, index):
         print(format_card(deck.get_card(card_id)))
 
 
-def delete_card_prompt(deck, index):
-    """Ask for a card ID, confirm, delete the card, then save the deck."""
+def delete_card_prompt(deck, index, scheduler):
+    """Ask for a card ID, confirm, delete the card everywhere, then save."""
     print("\n--- Delete a card ---")
     id_text = input("Enter the ID of the card to delete: ").strip()
 
@@ -156,6 +173,7 @@ def delete_card_prompt(deck, index):
 
     deck.delete_card(card_id)
     index.remove_card(card_id)
+    scheduler.remove_card(card_id)
 
     try:
         save_deck(deck, SAVE_FILE)
@@ -168,7 +186,7 @@ def import_cards_prompt(deck):
     """Ask for a CSV file, import its cards, report the result, then save.
 
     Returns the number of cards added, so the caller knows whether to rebuild
-    the search index.
+    the search index and the schedule.
     """
     print("\n--- Import cards from CSV ---")
     print("Columns (all required): topic, subtopic, question, answer, difficulty")
@@ -203,6 +221,72 @@ def import_cards_prompt(deck):
     return result.added
 
 
+def ask_right_or_wrong():
+    """Ask whether the answer was right. Returns 'y', 'n' or 'q' (stop)."""
+    while True:
+        reply = input("Did you get it right? (y = yes, n = no, q = stop): ").strip().lower()
+        if reply in ("y", "n", "q"):
+            return reply
+        print("Please type y, n or q.")
+
+
+def revise_prompt(deck, scheduler):
+    """Run a revision session: show the most urgent due card, record each answer.
+
+    The deck is saved once when the session ends, not after every answer.
+    """
+    print("\n--- Revise cards ---")
+    if len(deck) == 0:
+        print("The deck is empty. Add some cards first.")
+        return
+
+    answered = 0
+    correct = 0
+    nothing_due = False
+
+    try:
+        while True:
+            card_id = scheduler.next_due()
+            if card_id is None:
+                nothing_due = True
+                break
+
+            card = deck.get_card(card_id)
+            print(f"\n{card.topic} > {card.subtopic} (difficulty {card.difficulty})")
+            print(f"Q: {card.question}")
+            reveal = input("Press Enter to show the answer (q to stop): ").strip().lower()
+            if reveal == "q":
+                break
+
+            print(f"A: {card.answer}")
+            reply = ask_right_or_wrong()
+            if reply == "q":
+                break
+
+            is_correct = reply == "y"
+            scheduler.record_answer(card, is_correct)
+            answered += 1
+            if is_correct:
+                correct += 1
+                print(f"Correct! You will see this again in {format_wait(card.interval)}.")
+            else:
+                print(f"Not this time. You will see this again in {format_wait(card.interval)}.")
+    finally:
+        if answered:
+            try:
+                save_deck(deck, SAVE_FILE)
+            except StorageError as error:
+                print(f"Your answers could not be saved: {error}")
+
+    if answered:
+        print(f"\nSession finished: {correct} of {answered} correct.")
+    if nothing_due:
+        entry = scheduler.peek()
+        if entry is not None:
+            print(f"No more cards are due right now. The next one is due in "
+                  f"{format_wait(entry[1] - time.time())}.")
+
+
 def main():
     try:
         deck = load_deck(SAVE_FILE)
@@ -212,6 +296,7 @@ def main():
         return
 
     index = TrieIndex.from_deck(deck)
+    scheduler = Scheduler.from_deck(deck)
     print(f"Loaded {len(deck)} card(s).")
 
     while True:
@@ -221,25 +306,29 @@ def main():
         print("3. Search cards")
         print("4. Delete a card")
         print("5. Import cards from CSV")
-        print("6. Quit")
+        print("6. Revise cards")
+        print("7. Quit")
         choice = input("Choose an option: ").strip()
 
         if choice == "1":
-            add_card_prompt(deck, index)
+            add_card_prompt(deck, index, scheduler)
         elif choice == "2":
             list_cards(deck)
         elif choice == "3":
             search_cards_prompt(deck, index)
         elif choice == "4":
-            delete_card_prompt(deck, index)
+            delete_card_prompt(deck, index, scheduler)
         elif choice == "5":
             if import_cards_prompt(deck):
-                index = TrieIndex.from_deck(deck)   # rebuild so imported cards are searchable
+                index = TrieIndex.from_deck(deck)       # rebuild so imported cards are searchable
+                scheduler = Scheduler.from_deck(deck)   # ...and scheduled
         elif choice == "6":
+            revise_prompt(deck, scheduler)
+        elif choice == "7":
             print("Goodbye!")
             break
         else:
-            print("Please enter 1, 2, 3, 4, 5 or 6.")
+            print("Please enter 1, 2, 3, 4, 5, 6 or 7.")
 
 
 if __name__ == "__main__":
