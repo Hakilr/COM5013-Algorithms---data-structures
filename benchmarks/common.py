@@ -6,7 +6,8 @@ Run any benchmark from the main repo folder, for example:
     python -m benchmarks.benchmark_sorts --quick     (small sizes, to check it works)
     python -m benchmarks.benchmark_sorts --large     (adds 1,000,000 items: slow, uses a lot of memory)
 
-Each script prints its tables and saves them to benchmarks/results/<name>.md.
+Each script prints its tables and saves them to benchmarks/results/:
+    standard run -> <name>.md    --quick -> <name>_quick.md    --large -> <name>_large.md
 """
 
 import platform
@@ -21,6 +22,9 @@ from src.deck import Deck
 
 QUICK = "--quick" in sys.argv
 LARGE = "--large" in sys.argv
+
+# Each mode saves to its own file, so quick runs never overwrite real results.
+MODE_SUFFIX = "_quick" if QUICK else "_large" if LARGE else ""
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 
@@ -128,7 +132,7 @@ def start_report(name, title):
     header = (f"# {title}\n\nRun on {date.today().isoformat()}. {machine_info()}.\n"
               f"Mode: {'quick' if QUICK else 'large' if LARGE else 'standard'}. "
               f"Each time is the best of several runs unless marked otherwise.\n")
-    (RESULTS_DIR / f"{name}.md").write_text(header, encoding="utf-8")
+    (RESULTS_DIR / f"{name}{MODE_SUFFIX}.md").write_text(header, encoding="utf-8")
     print(header)
 
 
@@ -138,5 +142,5 @@ def report(name, heading, headers, rows, notes=""):
     if notes:
         text += f"\n{notes}\n"
     print(text)
-    with open(RESULTS_DIR / f"{name}.md", "a", encoding="utf-8") as file:
+    with open(RESULTS_DIR / f"{name}{MODE_SUFFIX}.md", "a", encoding="utf-8") as file:
         file.write(text)
