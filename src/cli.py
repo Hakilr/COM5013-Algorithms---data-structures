@@ -12,9 +12,9 @@ SAVE_FILE = Path(__file__).resolve().parent.parent / "deck.json"
 
 
 def next_card_id(deck):
-    """Return an unused ID: one more than the largest existing ID."""
-    ids = [card.card_id for card in deck.all_cards()]
-    return max(ids, default=0) + 1
+    def next_card_id(deck):
+        """Return an unused ID. O(1): the deck remembers the largest ID it has seen."""
+        return deck.new_id()
 
 
 def format_card(card):

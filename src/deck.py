@@ -1,16 +1,28 @@
 from src.card import Card
 
+
 class Deck:
     """A collection of cards stored in a hash map (Python dict) keyed by card ID."""
 
     def __init__(self):
         self._cards = {}
+        self._next_id = 1    # always larger than every ID ever added
 
     def add_card(self, card):
         """Add a card. Raises ValueError if the ID already exists. Average O(1)."""
         if card.card_id in self._cards:
             raise ValueError(f"Card ID {card.card_id} already exists")
         self._cards[card.card_id] = card
+        self._next_id = max(self._next_id, card.card_id + 1)
+
+    def new_id(self):
+        """Return an unused card ID in O(1).
+
+        The deck remembers the largest ID it has seen, so no scan is needed.
+        Deleting a card does not lower the counter, so an ID is never reused.
+        Calling it twice without adding a card gives the same ID twice.
+        """
+        return self._next_id
 
     def get_card(self, card_id):
         """Return the card with this ID, or None if it does not exist. Average O(1)."""
