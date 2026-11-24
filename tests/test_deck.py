@@ -61,3 +61,49 @@ def test_id_over_64_bits():
     deck = Deck()
     deck.add_card(make_card(2 ** 70))
     assert deck.get_card(2 ** 70) is not None
+
+def test_new_id_for_empty_deck():
+    assert Deck().new_id() == 1
+
+
+def test_new_id_is_one_more_than_the_largest_id():
+    deck = Deck()
+    deck.add_card(make_card(1))
+    deck.add_card(make_card(5))
+    assert deck.new_id() == 6
+
+
+def test_new_id_does_not_drop_when_adding_a_lower_id():
+    deck = Deck()
+    deck.add_card(make_card(10))
+    deck.add_card(make_card(3))
+    assert deck.new_id() == 11
+
+
+def test_ids_are_not_reused_after_deleting_the_highest_card():
+    deck = Deck()
+    for card_id in (1, 2, 3):
+        deck.add_card(make_card(card_id))
+    deck.delete_card(3)
+    assert deck.new_id() == 4
+
+
+def test_new_id_is_never_in_use():
+    deck = Deck()
+    for _ in range(100):
+        new_id = deck.new_id()
+        assert new_id not in deck
+        deck.add_card(make_card(new_id))
+
+
+def test_editing_does_not_change_new_id():
+    deck = Deck()
+    deck.add_card(make_card(1))
+    deck.edit_card(1, answer="Changed")
+    assert deck.new_id() == 2
+
+
+def test_new_id_after_id_over_64_bits():
+    deck = Deck()
+    deck.add_card(make_card(2 ** 70))
+    assert deck.new_id() == 2 ** 70 + 1

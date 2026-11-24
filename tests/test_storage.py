@@ -104,3 +104,11 @@ def test_save_leaves_no_temp_file(tmp_path):
 def test_save_to_missing_folder_raises(tmp_path):
     with pytest.raises(StorageError):
         save_deck(Deck(), tmp_path / "no_such_folder" / "deck.json")
+
+def test_loaded_deck_continues_ids_after_the_largest(tmp_path):
+    deck = Deck()
+    deck.add_card(make_card(1))
+    deck.add_card(make_card(7))
+    file_path = tmp_path / "deck.json"
+    save_deck(deck, file_path)
+    assert load_deck(file_path).new_id() == 8
