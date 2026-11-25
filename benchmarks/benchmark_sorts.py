@@ -2,24 +2,33 @@
 
 Run from the main repo folder:   python -m benchmarks.benchmark_sorts
 
-To add another algorithm (for example quick_sort or counting_sort), import it
-and add one line to ALGORITHMS below. Counting sort needs extra arguments, so
-wrap it first: lambda data: counting_sort(data, lambda x: x, 1, 3)
+To add another algorithm, import it and add one line to ALGORITHMS below.
+Counting sort needs extra arguments, so it is wrapped (see counting_sort_for_data).
 """
 
 import random
+from functools import partial
 
 from benchmarks.common import choose_sizes, format_seconds, measure, report, start_report
-from src.sorter import bubble_sort, merge_sort
+from src.sorter import bubble_sort, counting_sort, merge_sort, quick_sort
 
 NAME = "sorts"
 SIZES = choose_sizes([100, 1_000, 5_000, 10_000, 100_000])
+
+def counting_sort_for_data(data):
+    """Counting sort with its range taken from the data (the min and max scan is timed too)."""
+    return counting_sort(data, lambda x: x, min(data), max(data))
+
 
 # name -> (function, largest size to run). Bubble sort is O(n squared), so it is
 # stopped early: at 1,000,000 items it would need about 10^12 steps.
 ALGORITHMS = {
     "bubble sort": (bubble_sort, 5_000),
     "merge sort": (merge_sort, 1_000_000),
+    "quick sort (median of 3)": (quick_sort, 1_000_000),
+    # First-item pivot is O(n squared) on sorted data, so it is stopped early too.
+    "quick sort (first pivot)": (partial(quick_sort, pivot="first"), 5_000),
+    "counting sort": (counting_sort_for_data, 1_000_000),
     "sorted() (reference)": (sorted, 1_000_000),
 }
 
@@ -67,6 +76,8 @@ def main():
     report(NAME, "How to read these results", ["Expectation"], [
         ["Multiplying n by 10 should multiply O(n) time by about 10, O(n log n) by slightly more than 10, and O(n squared) by about 100."],
         ["Bubble sort should be fastest on already-sorted data (O(n) with the early exit) and slowest on reverse-sorted data."],
+        ["Quick sort with the first item as pivot should slow down sharply on sorted and reverse-sorted data (O(n squared)); the median-of-three version should not."],
+        ["Counting sort is O(n + k). On random data k is about 1,000,000, so small lists are slow because the counts list dwarfs the data; with only three distinct values it should beat every comparison sort."],
         ["sorted() is written in C, so it will beat your own sorts by a large factor. Compare your own sorts with each other."],
     ])
 
