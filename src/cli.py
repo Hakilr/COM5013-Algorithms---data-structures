@@ -7,14 +7,14 @@ from src.scheduler import Scheduler
 from src.sorter import merge_sort
 from src.storage import StorageError, load_deck, save_deck
 from src.trie_index import TrieIndex
+from src.undo_stack import UndoStack, snapshot, undo_last_answer
 
 SAVE_FILE = Path(__file__).resolve().parent.parent / "deck.json"
 
 
 def next_card_id(deck):
-    def next_card_id(deck):
-        """Return an unused ID. O(1): the deck remembers the largest ID it has seen."""
-        return deck.new_id()
+    """Return an unused ID. O(1): the deck remembers the largest ID it has seen."""
+    return deck.new_id()
 
 
 def format_card(card):
@@ -221,19 +221,24 @@ def import_cards_prompt(deck):
     return result.added
 
 
-def ask_right_or_wrong():
-    """Ask whether the answer was right. Returns 'y', 'n' or 'q' (stop)."""
+def ask_right_or_wrong(can_undo=False):
+    """Ask whether the answer was right. Returns 'y', 'n', 'q' (stop) or 'u' (undo)."""
+    allowed = ("y", "n", "q", "u") if can_undo else ("y", "n", "q")
+    prompt = "Did you get it right? (y = yes, n = no, q = stop"
+    prompt += ", u = undo previous answer): " if can_undo else "): "
     while True:
-        reply = input("Did you get it right? (y = yes, n = no, q = stop): ").strip().lower()
-        if reply in ("y", "n", "q"):
+        reply = input(prompt).strip().lower()
+        if reply in allowed:
             return reply
-        print("Please type y, n or q.")
+        print("Please type " + ", ".join(allowed[:-1]) + " or " + allowed[-1] + ".")
 
 
 def revise_prompt(deck, scheduler):
     """Run a revision session: show the most urgent due card, record each answer.
 
     The deck is saved once when the session ends, not after every answer.
+    Each answer is pushed on an undo stack, so "u" undoes the most recent answers
+    one at a time (last in, first out).
     """
     print("\n--- Revise cards ---")
     if len(deck) == 0:
@@ -243,6 +248,7 @@ def revise_prompt(deck, scheduler):
     answered = 0
     correct = 0
     nothing_due = False
+    undo_stack = UndoStack()
 
     try:
         while True:
@@ -259,11 +265,21 @@ def revise_prompt(deck, scheduler):
                 break
 
             print(f"A: {card.answer}")
-            reply = ask_right_or_wrong()
+            reply = ask_right_or_wrong(can_undo=not undo_stack.is_empty())
             if reply == "q":
                 break
+            if reply == "u":
+                undone = undo_last_answer(deck, scheduler, undo_stack)
+                if undone is not None:
+                    undone_card, was_correct = undone
+                    answered -= 1
+                    if was_correct:
+                        correct -= 1
+                    print(f"Undone: card {undone_card.card_id} is back as it was.")
+                continue    # the restored card is now the most urgent, so it is shown again
 
             is_correct = reply == "y"
+            undo_stack.push((snapshot(card), is_correct))
             scheduler.record_answer(card, is_correct)
             answered += 1
             if is_correct:

@@ -1,6 +1,7 @@
 import time
 
 from src.heap import MinHeap
+from src.undo_stack import restore
 
 INITIAL_INTERVAL = 60.0                # seconds until a wrong card is shown again
 MAX_INTERVAL = 30 * 24 * 60 * 60.0     # cap the doubling at 30 days
@@ -76,6 +77,16 @@ class Scheduler:
             card.times_wrong += 1
             card.interval = INITIAL_INTERVAL
         card.due_time = now + card.interval
+        self._push(card.card_id, card.due_time)
+
+    def restore_state(self, card, state):
+        """Undo an answer: put a card back to a saved state and reschedule it. O(log n).
+
+        The entry made by the answer stays in the heap and is skipped later as stale.
+        """
+        if card.card_id not in self._due:
+            raise KeyError(f"Card {card.card_id} is not scheduled")
+        restore(card, state)
         self._push(card.card_id, card.due_time)
 
     def heap_size(self):
